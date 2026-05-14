@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: library_db_container
+    environment:
+      POSTGRES_DB: library_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/init.sql # This will run schema.sql on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d library_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: library_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db:5432/library_db
+    depends_on:
+      db:
+        condition: service_healthy # Ensure DB is ready before starting backend
+    volumes:
+      - ./backend:/app # Mount the backend code for live reloading during development
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: library_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend # Frontend depends on backend being available
+    volumes:
+      - ./frontend:/app # Mount the frontend code for live reloading during development
+      - /app/node_modules # Exclude node_modules from host mount to prevent issues
+    environment:
+      # This is important for Next.js to know where to find the backend API
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000 # Use localhost for browser access
+
+volumes:
+  pgdata:
